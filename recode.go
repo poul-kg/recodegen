@@ -1,43 +1,94 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
+	"github.com/bmatcuk/doublestar/v4"
+	"github.com/vektah/gqlparser/v2"
+	"github.com/vektah/gqlparser/v2/ast"
 	"io/ioutil"
 	"log"
 	"os"
+	"regexp"
 	"strings"
-	"text/template"
-
-	"github.com/vektah/gqlparser/v2"
-	"github.com/vektah/gqlparser/v2/ast"
+	"unicode/utf8"
 )
 
 var spacing = "  "
 
 func main() {
-	schemaBytes, err := ioutil.ReadFile("schema/heroku-connect.graphql")
+	schemaAst := getSchemaAst("schema/heroku-connect.graphql")
+	generateSchema(schemaAst, "types.ts")
+
+	files := findFiles("schema/services/*.ts")
+	srcOps := extractOperationsFromFiles(files)
+	dstOps := generateOperations(schemaAst, srcOps)
+	appendToFile("types.ts", dstOps)
+}
+
+func findFiles(pattern string) []string {
+	var output []string
+	fsys := os.DirFS(".")
+	matches, _ := doublestar.Glob(fsys, pattern)
+	for _, fileName := range matches {
+		output = append(output, fileName)
+	}
+	return output
+}
+
+func extractOperationsFromFiles(fileNames []string) string {
+	// For each file...
+	output := ""
+	for _, fileName := range fileNames {
+		output += findOperationInFile(fileName)
+	}
+	return output
+}
+
+func findOperationInFile(fileName string) string {
+	output := ""
+	fileContent := getFileContent(fileName)
+	re := regexp.MustCompile("(?s)gql`(.*?)`")
+	matches := re.FindAllStringSubmatch(fileContent, -1)
+	if len(matches) == 0 {
+		return output
+	}
+	for _, match := range matches {
+		output += match[1]
+	}
+	return output
+}
+
+func getFileContent(fileName string) string {
+	schemaBytes, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		panic(err)
 	}
 
-	schemaStr := string(schemaBytes)
+	fileContentStr := string(schemaBytes)
+	return fileContentStr
+}
+
+func getSchemaAst(inputFileName string) *ast.Schema {
+	schemaStr := getFileContent(inputFileName)
 	source := &ast.Source{
-		Name:  "schema.graphql",
+		Name:  inputFileName,
 		Input: schemaStr,
 	}
 
 	// Parse the schema file
-	doc, parseErr := gqlparser.LoadSchema(source)
+	schemaAst, parseErr := gqlparser.LoadSchema(source)
 	if parseErr != nil {
 		panic(parseErr)
 	}
+	return schemaAst
+}
 
+func generateSchema(schemaAst *ast.Schema, outputFileName string) {
 	// Traverse and process the AST (example: print type names)
 	var enumOnly = ""
 	var typesOnly = ""
 	var objectsOnly = ""
-	for _, def := range doc.Types {
+	for _, def := range schemaAst.Types {
 		if def.Kind == ast.Enum {
 			enumOnly += genEnum(def)
 		}
@@ -47,65 +98,95 @@ func main() {
 		if def.Kind == ast.Object {
 			objectsOnly += generateObject(def)
 		}
+		if def.Kind == ast.Interface {
+			//fmt.Printf("%s\n", def.Name)
+		}
 	}
-	writeFile("types.ts", getTypesHeader()+enumOnly+typesOnly+objectsOnly)
+	writeFile(outputFileName, getTypesHeader()+enumOnly+typesOnly+objectsOnly)
 }
 
-type TemplateField struct {
-	Name        string
-	Type        string
-	Description string
+func generateOperations(schemaAst *ast.Schema, queryStr string) string {
+	output := ""
+	// Parse the schema file
+	astQuery, parseErr := gqlparser.LoadQuery(schemaAst, queryStr)
+	if parseErr != nil {
+		panic(parseErr)
+	}
+
+	// Traverse and process the AST (example: print type names)
+	for _, op := range astQuery.Operations {
+		output += generateOperationStr(op)
+	}
+	return output
 }
 
-func getTemplateField(field *ast.FieldDefinition) TemplateField {
-	return TemplateField{
-		Name:        field.Name,
-		Type:        field.Type.String(),
-		Description: field.Description,
-	}
+func generateOperationStr(astOp *ast.OperationDefinition) string {
+	return generateOperationVars(astOp) + "\n" + generateOperation(astOp)
 }
 
-func getTemplateFields(def *ast.Definition) []TemplateField {
-	var fields []TemplateField
-	for _, field := range def.Fields {
-		fields = append(fields, getTemplateField(field))
+func generateOperationVars(astOp *ast.OperationDefinition) string {
+	operationVars := "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + "Variables = Exact<{\n"
+	for _, varDef := range astOp.VariableDefinitions {
+		operationVars += spacing + generateVariable(varDef) + "\n"
 	}
-	return fields
+	operationVars += "}>;"
+	return operationVars
 }
 
-// tried to use templates, don't like white space it introduces
-// and weird {{- }} and {{ -}} syntax I need to use
-func genObjectViaTemplate(def *ast.Definition) string {
-	type TemplateInput struct {
-		Name        string
-		Description string
-		Fields      []TemplateField
+func generateOperation(astOp *ast.OperationDefinition) string {
+	output := "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + " = Exact<{\n"
+	for _, selection := range astOp.SelectionSet {
+		output += generateOpField(selection)
 	}
-	srcTemplate := `
-{{ if .Description }}/** {{.Description }} */{{end}}
-export type {{.Name}} = {
-{{- range .Fields }}
-  {{ if .Description -}}
-  /** {{.Description }} */
-  {{- end }}
-  {{.Name}}: {{.Type}};
-{{- end}}
+	output += "}>;\n"
+	return output
 }
-`
-	templateInput := TemplateInput{}
-	templateInput.Name = normalizedName(def.Name)
-	templateInput.Description = def.Description
-	templateInput.Fields = getTemplateFields(def)
 
-	tmpl, err := template.New("test").Parse(srcTemplate)
-	if err != nil {
-		panic(err)
+func generateOpField(selection ast.Selection) string {
+	astField, ok := selection.(*ast.Field)
+	if !ok {
+		panic("Unable to cast")
 	}
-	var outputBuffer bytes.Buffer
-	if err := tmpl.Execute(&outputBuffer, templateInput); err != nil {
-		panic(err)
+	output := ""
+	if astField.SelectionSet == nil {
+		output += spacing + generateOpFieldName(astField) + ": " + generateOpFieldType(astField.Definition.Type)
+	} else {
+		opStr := ""
+		closeStr := ""
+		if astField.Definition.Type.NamedType == "" {
+			// array
+			opStr += "Array<{\n"
+			closeStr += "}>\n"
+		} else {
+			// object
+			opStr += "{\n"
+			closeStr += "}\n"
+		}
+		output += generateFieldName(astField.Definition) + ": " + opStr
+		for _, selection := range astField.SelectionSet {
+			output += spacing + generateOpField(selection) + ";\n"
+		}
+		output += closeStr
 	}
-	return outputBuffer.String()
+	return output
+}
+
+func generateVariable(varDef *ast.VariableDefinition) string {
+	output := varDef.Variable
+	if varDef.Type.NonNull == false {
+		output += "?: "
+	} else {
+		output += ": "
+	}
+	output += generateFieldType(varDef.Type) + ";"
+	return output
+}
+
+// Upper Case first letter of a string
+func UcFirst(input string) string {
+	r, size := utf8.DecodeRuneInString(input)
+	input = strings.ToUpper(string(r)) + input[size:]
+	return input
 }
 
 func generateObject(def *ast.Definition) string {
@@ -229,6 +310,25 @@ func writeFile(fileName string, data string) {
 	}
 }
 
+func appendToFile(fileName string, data string) {
+	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	defer func(f *os.File) {
+		err := f.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(f)
+
+	_, err = f.WriteString(data)
+	if err != nil {
+		panic(err)
+	}
+}
+
 func genInputObject(def *ast.Definition) string {
 	desc := genDesc(def)
 	start := desc + "export type " + normalizedName(def.Name) + " = {\n"
@@ -257,6 +357,23 @@ func generateFieldType(astType *ast.Type) string {
 	return "Array<" + normalName + ">"
 }
 
+func generateOpFieldType(astType *ast.Type) string {
+	normalName := wrapOpScalar(astType.Name())
+
+	if astType.NamedType != "" {
+		if astType.NonNull == false {
+			normalName = normalName + " | " + "null"
+		}
+		return normalName
+	}
+
+	if astType.NonNull == false {
+		normalName = normalName + "[] | null"
+	}
+
+	return normalName + "[]"
+}
+
 // given type like "Int" will wrap it into "Scalars['Int']"
 // if given type is not scalar, return as is
 func wrapScalar(typeName string) string {
@@ -274,6 +391,35 @@ func wrapScalar(typeName string) string {
 				return "Scalars['" + strings.ToLower(typeName) + "']"
 			}
 			return "Scalars['" + typeName + "']"
+		}
+	}
+	return typeName
+}
+
+func wrapOpScalar(typeName string) string {
+	typeName = normalizedName(typeName)
+	scalars := []string{"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz"}
+	for _, scalar := range scalars {
+		if typeName == scalar {
+			switch scalar {
+			case "Boolean":
+				return "boolean"
+			case "String":
+				return "string"
+			case "Int":
+				return "number"
+			case "Float8":
+				return "number"
+			case "Float":
+				return "number"
+			case "Bigint":
+				return "number"
+			case "Timestamp":
+				return "string"
+			case "Timestamptz":
+				return "string"
+			}
+			return "any"
 		}
 	}
 	return typeName
@@ -298,6 +444,13 @@ func genInputFieldType(astType *ast.Type) string {
 
 func generateFieldName(astFieldDef *ast.FieldDefinition) string {
 	return astFieldDef.Name + genNullable(astFieldDef)
+}
+
+func generateOpFieldName(astField *ast.Field) string {
+	if astField.Definition.Type.NonNull == false {
+		return astField.Alias + "?"
+	}
+	return astField.Alias
 }
 
 func genNullable(astFieldDef *ast.FieldDefinition) string {
