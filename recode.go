@@ -3,22 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/bmatcuk/doublestar/v4" // to expand path globs like dir/**/*.ts
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/language"
 	"log"
 	"os"
 	"recodegen/config"
-	"regexp"
-	"strings"
-	"unicode/utf8"
+	"recodegen/typescript"
+	"runtime"
 )
-
-var spacing = "  "
-
-const defExportName = "Types"
 
 func main() {
 	configFileName := flag.String("config", "recodegen.json", "Configuration file name")
@@ -27,61 +19,44 @@ func main() {
 	schemaAst := getSchemaAst(cliConfig.Schema)
 
 	for outputFileName, genConfig := range cliConfig.Generates {
-		if genConfig.Plugins[0] == "typescript" {
-			generateSchema(schemaAst, outputFileName)
+		processInput(schemaAst, outputFileName, genConfig)
+	}
+
+	PrintMemUsage()
+
+	//fmt.Println("Parallel")
+	//var wg sync.WaitGroup
+	//
+	//for outputFileName, genConfig := range cliConfig.Generates {
+	//	// increment the WaitGroup counter
+	//	wg.Add(1)
+	//
+	//	go func(schemaAst *ast.Schema, outputFileName string, genConfig config.CodegenSchemaEntryConfig) {
+	//		// decrement the WaitGroup counter when the goroutine completes
+	//		defer wg.Done()
+	//
+	//		processInput(schemaAst, outputFileName, genConfig)
+	//	}(schemaAst, outputFileName, genConfig)
+	//}
+	//
+	//// wait for all goroutines to finish
+	//wg.Wait()
+}
+
+func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config.CodegenSchemaEntryConfig) {
+	if genConfig.Plugins[0] == "typescript" {
+		//generateSchema(schemaAst, outputFileName)
+		schema := typescript.Schema{Ast: schemaAst}
+		writeFile(outputFileName, schema.String())
+	}
+	if genConfig.Plugins[0] == "typescript-operations" {
+		operation := typescript.Operations{
+			Ast:    schemaAst,
+			Config: genConfig,
 		}
-		if genConfig.Plugins[0] == "typescript-operations" {
-			typesPath := ""
-			if genConfig.Preset == "import-types" {
-				typesPath = genConfig.PresetConfig["typesPath"]
-			}
-			files := findFiles(genConfig.Documents[0])
-			//fmt.Printf("%s\n", outputFileName)
-			//fmt.Printf("%s\n", files)
-			srcOps := extractOperationsFromFiles(files)
-			dstOps := generateOperations(schemaAst, srcOps, typesPath)
-			writeFile(outputFileName, dstOps)
-		}
+		fmt.Printf("[writing] %s\n", outputFileName)
+		writeFile(outputFileName, operation.String())
 	}
-	//generateSchema(schemaAst, "types.ts")
-
-	//files := findFiles("schema/services/*.ts")
-	//srcOps := extractOperationsFromFiles(files)
-	//dstOps := generateOperations(schemaAst, srcOps)
-	//appendToFile("types.ts", dstOps)
-}
-
-func findFiles(pattern string) []string {
-	var output []string
-	fsys := os.DirFS(".")
-	matches, _ := doublestar.Glob(fsys, pattern)
-	for _, fileName := range matches {
-		output = append(output, fileName)
-	}
-	return output
-}
-
-func extractOperationsFromFiles(fileNames []string) string {
-	// For each file...
-	output := ""
-	for _, fileName := range fileNames {
-		output += findOperationInFile(fileName)
-	}
-	return output
-}
-
-func findOperationInFile(fileName string) string {
-	output := ""
-	fileContent := getFileContent(fileName)
-	re := regexp.MustCompile("(?s)gql`(.*?)`")
-	matches := re.FindAllStringSubmatch(fileContent, -1)
-	if len(matches) == 0 {
-		return output
-	}
-	for _, match := range matches {
-		output += match[1]
-	}
-	return output
 }
 
 func getFileContent(fileName string) string {
@@ -108,252 +83,6 @@ func getSchemaAst(inputFileName string) *ast.Schema {
 	return schemaAst
 }
 
-func generateSchema(schemaAst *ast.Schema, outputFileName string) {
-	// Traverse and process the AST (example: print type names)
-	var enumOnly = ""
-	var typesOnly = ""
-	var objectsOnly = ""
-	for _, def := range schemaAst.Types {
-		if def.Kind == ast.Enum {
-			enumOnly += genEnum(def)
-		}
-		if def.Kind == ast.InputObject {
-			typesOnly += genInputObject(def)
-		}
-		if def.Kind == ast.Object {
-			objectsOnly += generateObject(def)
-		}
-		if def.Kind == ast.Interface {
-			//fmt.Printf("%s\n", def.Name)
-		}
-	}
-	writeFile(outputFileName, getTypesHeader()+enumOnly+typesOnly+objectsOnly)
-}
-
-func generateOperations(schemaAst *ast.Schema, queryStr string, typesPath string) string {
-	fmt.Printf("TypesPath: %s\n", typesPath)
-	output := ""
-	// Parse the schema file
-	astQuery, parseErr := gqlparser.LoadQuery(schemaAst, queryStr)
-	if parseErr != nil {
-		fmt.Printf("%s\n", queryStr)
-		panic(parseErr)
-	}
-	isImportTypes := false
-	if typesPath != "" {
-		isImportTypes = true
-	}
-	// Traverse and process the AST (example: print type names)
-	for _, op := range astQuery.Operations {
-		output += generateOperationStr(op, isImportTypes)
-	}
-	if typesPath != "" {
-		output = "import * as Types from \"" + typesPath + "\";\n" + output
-	}
-	return output
-}
-
-func generateOperationStr(astOp *ast.OperationDefinition, isImportTypes bool) string {
-	return generateOperationVars(astOp, isImportTypes) + "\n" + generateOperation(astOp, isImportTypes)
-}
-
-func generateOperationVars(astOp *ast.OperationDefinition, isImportTypes bool) string {
-	operationVars := ""
-	if isImportTypes {
-		operationVars = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) +
-			"Variables = " + defExportName + ".Exact<{\n"
-	} else {
-		operationVars = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + "Variables = Exact<{\n"
-	}
-
-	for _, varDef := range astOp.VariableDefinitions {
-		operationVars += spacing + generateVariable(varDef, isImportTypes) + "\n"
-	}
-	operationVars += "}>;"
-	return operationVars
-}
-
-func generateOperation(astOp *ast.OperationDefinition, isImportTypes bool) string {
-	output := ""
-	if isImportTypes {
-		output = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + " = " +
-			defExportName + ".Exact<{\n"
-	} else {
-		output = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + " = Exact<{\n"
-	}
-	if astOp.Operation == "query" {
-		output += "__typename?: 'query_root',\n"
-	}
-	if astOp.Operation == "mutation" {
-		output += "__typename?: 'mutation_root',\n"
-	}
-	for _, selection := range astOp.SelectionSet {
-		output += generateOpField(selection, isImportTypes)
-	}
-	output += "}>;\n"
-	return output
-}
-
-func generateOpField(selection ast.Selection, isImportTypes bool) string {
-	astField, ok := selection.(*ast.Field)
-	if !ok {
-		panic("Unable to cast")
-	}
-	output := ""
-	if astField.SelectionSet == nil {
-		output += spacing + generateOpFieldName(astField) + ": " + generateOpFieldType(astField.Definition.Type, isImportTypes)
-	} else {
-		opStr := ""
-		closeStr := ""
-		if astField.Definition.Type.NamedType == "" {
-			// array
-			opStr += "Array<{\n"
-			closeStr += "}>;\n"
-		} else {
-			// object
-			opStr += "{\n"
-			closeStr += "};\n"
-		}
-		output += generateFieldName(astField.Definition) + ": " + opStr
-		output += "__typename?: '" + astField.Name + "',\n"
-		for _, selection := range astField.SelectionSet {
-			output += spacing + generateOpField(selection, isImportTypes) + "\n"
-		}
-		output += closeStr
-	}
-	return output
-}
-
-func generateVariable(varDef *ast.VariableDefinition, isImportTypes bool) string {
-	output := varDef.Variable
-	if varDef.Type.NonNull == false {
-		output += "?: "
-	} else {
-		output += ": "
-	}
-	if isImportTypes {
-		output += generateFieldTypeImported(varDef.Type) + ";"
-	} else {
-		output += generateFieldType(varDef.Type) + ";"
-	}
-	return output
-}
-
-// Upper Case first letter of a string
-func UcFirst(input string) string {
-	r, size := utf8.DecodeRuneInString(input)
-	input = strings.ToUpper(string(r)) + input[size:]
-	return input
-}
-
-func generateObject(def *ast.Definition) string {
-	objectName := normalizedName(def.Name)
-	desc := generateDesc(def.Description)
-	header := fmt.Sprintf("\nexport type %s = {", objectName)
-	if len(desc) > 0 {
-		header = "\n" + desc + header
-	}
-	body := ""
-	footer := "\n};\n"
-
-	for _, field := range def.Fields {
-		if field.Name == "__schema" {
-			continue
-		}
-		if field.Name == "__type" {
-			continue
-		}
-		if len(field.Description) > 0 {
-			body += "\n" + spacing + generateDesc(field.Description)
-		}
-		body += "\n" + spacing + generateFieldName(field) + ": " + generateFieldType(field.Type) + ";"
-	}
-	return header + body + footer
-}
-
-func generateDesc(desc string) string {
-	if len(desc) > 0 {
-		return fmt.Sprintf("/** %s */", desc)
-	}
-	return ""
-}
-
-func genEnum(def *ast.Definition) string {
-	var tmpl = `export enum %s {
-%s
-}
-
-`
-	desc := generateDesc(def.Description)
-	if len(desc) > 0 {
-		tmpl = desc + "\n" + tmpl
-	}
-	var enumValues []string
-	for _, enumVal := range def.EnumValues {
-		desc := ""
-		if len(enumVal.Description) > 0 {
-			desc = fmt.Sprintf("%s/** %s */", spacing, enumVal.Description)
-		}
-		// /** desc */
-		// enumName = 'enumValue'
-		enumItem := fmt.Sprintf("%s\n%s%s = '%s',", desc, spacing, getEnumItemName(enumVal.Name), enumVal.Name)
-		enumValues = append(enumValues, enumItem)
-	}
-	enumName := normalizedName(def.Name)
-	return fmt.Sprintf(tmpl, enumName, strings.Join(enumValues, "\n"))
-}
-
-func normalizedName(snakeCase string) string {
-	words := strings.Split(snakeCase, "_")
-	caser := cases.Title(language.English)
-	for i, word := range words {
-		words[i] = caser.String(word)
-	}
-
-	upperCamelCase := strings.Join(words, "_")
-	return upperCamelCase
-}
-
-func getEnumItemName(snakeCase string) string {
-	words := strings.Split(snakeCase, "_")
-	for i, word := range words {
-		caser := cases.Title(language.English)
-		words[i] = caser.String(word)
-	}
-
-	upperCamelCase := strings.Join(words, "")
-	return upperCamelCase
-}
-
-func getTypesHeader() string {
-	return `export type Maybe<T> = T | null;
-export type InputMaybe<T> = Maybe<T>;
-export type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
-export type MakeOptional<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]?: Maybe<T[SubKey]> };
-export type MakeMaybe<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]: Maybe<T[SubKey]> };
-/** All built-in and custom scalars, mapped to their actual values */
-export type Scalars = {
-  ID: string;
-  String: string;
-  Boolean: boolean;
-  Int: number;
-  Float: number;
-  Bigint: any;
-  date: any;
-  float8: any;
-  Timestamp: any;
-  Timestamptz: any;
-  Json: any;
-  Jsonb: any;
-  Numeric: any;
-  Point: any;
-  Polygon: any;
-  Uuid: any;
-};
-
-`
-}
-
 func writeFile(fileName string, data string) {
 	f, err := os.Create(fileName)
 
@@ -375,179 +104,16 @@ func writeFile(fileName string, data string) {
 	}
 }
 
-func appendToFile(fileName string, data string) {
-	f, err := os.OpenFile(fileName, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
-	if err != nil {
-		panic(err)
-	}
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
 
-	defer func(f *os.File) {
-		err := f.Close()
-		if err != nil {
-			panic(err)
-		}
-	}(f)
-
-	_, err = f.WriteString(data)
-	if err != nil {
-		panic(err)
-	}
+	fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
+	fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
+	fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
+	fmt.Printf("\tNumGC = %v\n", m.NumGC)
 }
 
-func genInputObject(def *ast.Definition) string {
-	desc := genDesc(def)
-	start := desc + "export type " + normalizedName(def.Name) + " = {\n"
-	var fields []string
-	for _, field := range def.Fields {
-		fieldStr := "  " + generateFieldName(field) + ": " + genInputFieldType(field.Type) + ";\n"
-		fields = append(fields, fieldStr)
-	}
-	return start + strings.Join(fields, "") + "};\n\n"
-}
-
-func generateFieldType(astType *ast.Type) string {
-	normalName := wrapScalar(normalizedName(astType.Name()))
-
-	if astType.NamedType != "" {
-		if astType.NonNull == false {
-			normalName = "Maybe<" + normalName + ">"
-		}
-		return normalName
-	}
-
-	if astType.NonNull == false {
-		normalName = "Maybe<Array<" + normalName + ">>"
-		return normalName
-	}
-
-	return "Array<" + normalName + ">"
-}
-
-func generateFieldTypeImported(astType *ast.Type) string {
-	normalName := wrapScalar(normalizedName(astType.Name()))
-	normalName = defExportName + "." + normalName
-
-	if astType.NamedType != "" {
-		if astType.NonNull == false {
-			normalName = defExportName + ".Maybe<" + normalName + ">"
-		}
-		return normalName
-	}
-
-	if astType.NonNull == false {
-		normalName = defExportName + ".Maybe<Array<" + normalName + ">>"
-		return normalName
-	}
-
-	return "Array<" + normalName + ">"
-}
-
-func generateOpFieldType(astType *ast.Type, isImportTypes bool) string {
-	normalName := wrapOpScalar(astType.Name(), isImportTypes)
-
-	if astType.NamedType != "" {
-		if astType.NonNull == false {
-			normalName = normalName + " | " + "null"
-		}
-		return normalName
-	}
-
-	if astType.NonNull == false {
-		normalName = normalName + "[] | null"
-	}
-
-	return normalName + "[]"
-}
-
-// given type like "Int" will wrap it into "Scalars['Int']"
-// if given type is not scalar, return as is
-func wrapScalar(typeName string) string {
-	scalars := []string{
-		"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz",
-		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point",
-	}
-	for _, scalar := range scalars {
-		if typeName == scalar {
-			return "Scalars['" + typeName + "']"
-		}
-	}
-	return typeName
-}
-
-func wrapOpScalar(typeName string, isImportTypes bool) string {
-	typeName = normalizedName(typeName)
-	scalars := []string{
-		"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz",
-		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point",
-	}
-	for _, scalar := range scalars {
-		if typeName == scalar {
-			switch scalar {
-			case "Boolean":
-				return "boolean"
-			case "String":
-				return "string"
-			case "Int":
-				return "number"
-			case "Float8":
-				return "number"
-			case "Float":
-				return "number"
-			case "Bigint":
-				return "number"
-			case "Timestamp":
-				return "string"
-			case "Timestamptz":
-				return "string"
-			}
-			return "any"
-		}
-	}
-	if isImportTypes {
-		typeName = "Types." + typeName
-	}
-	return typeName
-}
-
-func genInputFieldType(astType *ast.Type) string {
-	normalName := wrapScalar(normalizedName(astType.Name()))
-
-	if astType.NamedType != "" {
-		if astType.NonNull == false {
-			normalName = "InputMaybe<" + normalName + ">"
-		}
-		return normalName
-	}
-
-	if astType.NonNull == false {
-		normalName = "InputMaybe<Array<" + normalName + ">>"
-		return normalName
-	}
-
-	return "Array<" + normalName + ">"
-}
-
-func generateFieldName(astFieldDef *ast.FieldDefinition) string {
-	return astFieldDef.Name + genNullable(astFieldDef)
-}
-
-func generateOpFieldName(astField *ast.Field) string {
-	if astField.Definition.Type.NonNull == false {
-		return astField.Alias + "?"
-	}
-	return astField.Alias
-}
-
-func genNullable(astFieldDef *ast.FieldDefinition) string {
-	if astFieldDef.Type.NonNull {
-		return ""
-	}
-	return "?"
-}
-
-func genDesc(astDef *ast.Definition) string {
-	if len(astDef.Description) > 0 {
-		return "/** " + astDef.Description + " */\n"
-	}
-	return ""
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
 }
