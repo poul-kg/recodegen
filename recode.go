@@ -1,13 +1,16 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"github.com/bmatcuk/doublestar/v4"
+	"github.com/bmatcuk/doublestar/v4" // to expand path globs like dir/**/*.ts
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
-	"io/ioutil"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"log"
 	"os"
+	"recodegen/config"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -15,14 +18,37 @@ import (
 
 var spacing = "  "
 
-func main() {
-	schemaAst := getSchemaAst("schema/heroku-connect.graphql")
-	generateSchema(schemaAst, "types.ts")
+const defExportName = "Types"
 
-	files := findFiles("schema/services/*.ts")
-	srcOps := extractOperationsFromFiles(files)
-	dstOps := generateOperations(schemaAst, srcOps)
-	appendToFile("types.ts", dstOps)
+func main() {
+	configFileName := flag.String("config", "recodegen.json", "Configuration file name")
+	flag.Parse()
+	cliConfig := config.ReadConfigFromFile(*configFileName)
+	schemaAst := getSchemaAst(cliConfig.Schema)
+
+	for outputFileName, genConfig := range cliConfig.Generates {
+		if genConfig.Plugins[0] == "typescript" {
+			generateSchema(schemaAst, outputFileName)
+		}
+		if genConfig.Plugins[0] == "typescript-operations" {
+			typesPath := ""
+			if genConfig.Preset == "import-types" {
+				typesPath = genConfig.PresetConfig["typesPath"]
+			}
+			files := findFiles(genConfig.Documents[0])
+			//fmt.Printf("%s\n", outputFileName)
+			//fmt.Printf("%s\n", files)
+			srcOps := extractOperationsFromFiles(files)
+			dstOps := generateOperations(schemaAst, srcOps, typesPath)
+			writeFile(outputFileName, dstOps)
+		}
+	}
+	//generateSchema(schemaAst, "types.ts")
+
+	//files := findFiles("schema/services/*.ts")
+	//srcOps := extractOperationsFromFiles(files)
+	//dstOps := generateOperations(schemaAst, srcOps)
+	//appendToFile("types.ts", dstOps)
 }
 
 func findFiles(pattern string) []string {
@@ -59,13 +85,12 @@ func findOperationInFile(fileName string) string {
 }
 
 func getFileContent(fileName string) string {
-	schemaBytes, err := ioutil.ReadFile(fileName)
+	schemaBytes, err := os.ReadFile(fileName)
 	if err != nil {
 		panic(err)
 	}
 
-	fileContentStr := string(schemaBytes)
-	return fileContentStr
+	return string(schemaBytes)
 }
 
 func getSchemaAst(inputFileName string) *ast.Schema {
@@ -105,80 +130,112 @@ func generateSchema(schemaAst *ast.Schema, outputFileName string) {
 	writeFile(outputFileName, getTypesHeader()+enumOnly+typesOnly+objectsOnly)
 }
 
-func generateOperations(schemaAst *ast.Schema, queryStr string) string {
+func generateOperations(schemaAst *ast.Schema, queryStr string, typesPath string) string {
+	fmt.Printf("TypesPath: %s\n", typesPath)
 	output := ""
 	// Parse the schema file
 	astQuery, parseErr := gqlparser.LoadQuery(schemaAst, queryStr)
 	if parseErr != nil {
+		fmt.Printf("%s\n", queryStr)
 		panic(parseErr)
 	}
-
+	isImportTypes := false
+	if typesPath != "" {
+		isImportTypes = true
+	}
 	// Traverse and process the AST (example: print type names)
 	for _, op := range astQuery.Operations {
-		output += generateOperationStr(op)
+		output += generateOperationStr(op, isImportTypes)
+	}
+	if typesPath != "" {
+		output = "import * as Types from \"" + typesPath + "\";\n" + output
 	}
 	return output
 }
 
-func generateOperationStr(astOp *ast.OperationDefinition) string {
-	return generateOperationVars(astOp) + "\n" + generateOperation(astOp)
+func generateOperationStr(astOp *ast.OperationDefinition, isImportTypes bool) string {
+	return generateOperationVars(astOp, isImportTypes) + "\n" + generateOperation(astOp, isImportTypes)
 }
 
-func generateOperationVars(astOp *ast.OperationDefinition) string {
-	operationVars := "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + "Variables = Exact<{\n"
+func generateOperationVars(astOp *ast.OperationDefinition, isImportTypes bool) string {
+	operationVars := ""
+	if isImportTypes {
+		operationVars = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) +
+			"Variables = " + defExportName + ".Exact<{\n"
+	} else {
+		operationVars = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + "Variables = Exact<{\n"
+	}
+
 	for _, varDef := range astOp.VariableDefinitions {
-		operationVars += spacing + generateVariable(varDef) + "\n"
+		operationVars += spacing + generateVariable(varDef, isImportTypes) + "\n"
 	}
 	operationVars += "}>;"
 	return operationVars
 }
 
-func generateOperation(astOp *ast.OperationDefinition) string {
-	output := "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + " = Exact<{\n"
+func generateOperation(astOp *ast.OperationDefinition, isImportTypes bool) string {
+	output := ""
+	if isImportTypes {
+		output = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + " = " +
+			defExportName + ".Exact<{\n"
+	} else {
+		output = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + " = Exact<{\n"
+	}
+	if astOp.Operation == "query" {
+		output += "__typename?: 'query_root',\n"
+	}
+	if astOp.Operation == "mutation" {
+		output += "__typename?: 'mutation_root',\n"
+	}
 	for _, selection := range astOp.SelectionSet {
-		output += generateOpField(selection)
+		output += generateOpField(selection, isImportTypes)
 	}
 	output += "}>;\n"
 	return output
 }
 
-func generateOpField(selection ast.Selection) string {
+func generateOpField(selection ast.Selection, isImportTypes bool) string {
 	astField, ok := selection.(*ast.Field)
 	if !ok {
 		panic("Unable to cast")
 	}
 	output := ""
 	if astField.SelectionSet == nil {
-		output += spacing + generateOpFieldName(astField) + ": " + generateOpFieldType(astField.Definition.Type)
+		output += spacing + generateOpFieldName(astField) + ": " + generateOpFieldType(astField.Definition.Type, isImportTypes)
 	} else {
 		opStr := ""
 		closeStr := ""
 		if astField.Definition.Type.NamedType == "" {
 			// array
 			opStr += "Array<{\n"
-			closeStr += "}>\n"
+			closeStr += "}>;\n"
 		} else {
 			// object
 			opStr += "{\n"
-			closeStr += "}\n"
+			closeStr += "};\n"
 		}
 		output += generateFieldName(astField.Definition) + ": " + opStr
+		output += "__typename?: '" + astField.Name + "',\n"
 		for _, selection := range astField.SelectionSet {
-			output += spacing + generateOpField(selection) + ";\n"
+			output += spacing + generateOpField(selection, isImportTypes) + "\n"
 		}
 		output += closeStr
 	}
 	return output
 }
 
-func generateVariable(varDef *ast.VariableDefinition) string {
+func generateVariable(varDef *ast.VariableDefinition, isImportTypes bool) string {
 	output := varDef.Variable
 	if varDef.Type.NonNull == false {
 		output += "?: "
 	} else {
 		output += ": "
 	}
-	output += generateFieldType(varDef.Type) + ";"
+	if isImportTypes {
+		output += generateFieldTypeImported(varDef.Type) + ";"
+	} else {
+		output += generateFieldType(varDef.Type) + ";"
+	}
 	return output
 }
 
@@ -248,8 +305,9 @@ func genEnum(def *ast.Definition) string {
 
 func normalizedName(snakeCase string) string {
 	words := strings.Split(snakeCase, "_")
+	caser := cases.Title(language.English)
 	for i, word := range words {
-		words[i] = strings.Title(word)
+		words[i] = caser.String(word)
 	}
 
 	upperCamelCase := strings.Join(words, "_")
@@ -259,7 +317,8 @@ func normalizedName(snakeCase string) string {
 func getEnumItemName(snakeCase string) string {
 	words := strings.Split(snakeCase, "_")
 	for i, word := range words {
-		words[i] = strings.Title(word)
+		caser := cases.Title(language.English)
+		words[i] = caser.String(word)
 	}
 
 	upperCamelCase := strings.Join(words, "")
@@ -279,11 +338,17 @@ export type Scalars = {
   Boolean: boolean;
   Int: number;
   Float: number;
-  bigint: any;
+  Bigint: any;
   date: any;
   float8: any;
-  timestamp: any;
-  timestamptz: any;
+  Timestamp: any;
+  Timestamptz: any;
+  Json: any;
+  Jsonb: any;
+  Numeric: any;
+  Point: any;
+  Polygon: any;
+  Uuid: any;
 };
 
 `
@@ -352,13 +417,33 @@ func generateFieldType(astType *ast.Type) string {
 
 	if astType.NonNull == false {
 		normalName = "Maybe<Array<" + normalName + ">>"
+		return normalName
 	}
 
 	return "Array<" + normalName + ">"
 }
 
-func generateOpFieldType(astType *ast.Type) string {
-	normalName := wrapOpScalar(astType.Name())
+func generateFieldTypeImported(astType *ast.Type) string {
+	normalName := wrapScalar(normalizedName(astType.Name()))
+	normalName = defExportName + "." + normalName
+
+	if astType.NamedType != "" {
+		if astType.NonNull == false {
+			normalName = defExportName + ".Maybe<" + normalName + ">"
+		}
+		return normalName
+	}
+
+	if astType.NonNull == false {
+		normalName = defExportName + ".Maybe<Array<" + normalName + ">>"
+		return normalName
+	}
+
+	return "Array<" + normalName + ">"
+}
+
+func generateOpFieldType(astType *ast.Type, isImportTypes bool) string {
+	normalName := wrapOpScalar(astType.Name(), isImportTypes)
 
 	if astType.NamedType != "" {
 		if astType.NonNull == false {
@@ -377,28 +462,24 @@ func generateOpFieldType(astType *ast.Type) string {
 // given type like "Int" will wrap it into "Scalars['Int']"
 // if given type is not scalar, return as is
 func wrapScalar(typeName string) string {
-	scalars := []string{"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz"}
+	scalars := []string{
+		"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz",
+		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point",
+	}
 	for _, scalar := range scalars {
 		if typeName == scalar {
-			switch scalar {
-			case "Bigint":
-				fallthrough
-			case "Float8":
-				fallthrough
-			case "Timestamp":
-				fallthrough
-			case "Timestamptz":
-				return "Scalars['" + strings.ToLower(typeName) + "']"
-			}
 			return "Scalars['" + typeName + "']"
 		}
 	}
 	return typeName
 }
 
-func wrapOpScalar(typeName string) string {
+func wrapOpScalar(typeName string, isImportTypes bool) string {
 	typeName = normalizedName(typeName)
-	scalars := []string{"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz"}
+	scalars := []string{
+		"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz",
+		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point",
+	}
 	for _, scalar := range scalars {
 		if typeName == scalar {
 			switch scalar {
@@ -422,6 +503,9 @@ func wrapOpScalar(typeName string) string {
 			return "any"
 		}
 	}
+	if isImportTypes {
+		typeName = "Types." + typeName
+	}
 	return typeName
 }
 
@@ -437,6 +521,7 @@ func genInputFieldType(astType *ast.Type) string {
 
 	if astType.NonNull == false {
 		normalName = "InputMaybe<Array<" + normalName + ">>"
+		return normalName
 	}
 
 	return "Array<" + normalName + ">"
