@@ -5,6 +5,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+	"regexp"
 	"strings"
 )
 
@@ -100,7 +101,7 @@ func generateDesc(desc string) string {
 
 func normalizedName(snakeCase string) string {
 	words := strings.Split(snakeCase, "_")
-	caser := cases.Title(language.English)
+	caser := cases.Title(language.English, cases.NoLower)
 	for i, word := range words {
 		words[i] = caser.String(word)
 	}
@@ -143,7 +144,7 @@ func generateFieldType(astType *ast.Type) string {
 func wrapScalar(typeName string) string {
 	scalars := []string{
 		"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz",
-		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point",
+		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point", "Date", "date",
 	}
 	for _, scalar := range scalars {
 		if typeName == scalar {
@@ -183,7 +184,9 @@ func genInputFieldType(astType *ast.Type) string {
 }
 
 func getEnumItemName(snakeCase string) string {
-	words := strings.Split(snakeCase, "_")
+	//re := regexp.MustCompile("_([A-Za-z])")
+	//words := strings.Split(snakeCase, "_")
+	words := splitUnderscoredString(snakeCase)
 	for i, word := range words {
 		caser := cases.Title(language.English)
 		words[i] = caser.String(word)
@@ -191,6 +194,18 @@ func getEnumItemName(snakeCase string) string {
 
 	upperCamelCase := strings.Join(words, "")
 	return upperCamelCase
+}
+
+func splitUnderscoredString(snakeCase string) []string {
+	// Compile the expression
+	re := regexp.MustCompile("_([A-Za-z])") // match underscore when followed by a letter
+
+	// Replace the underscore with a special character
+	replaced := re.ReplaceAllString(snakeCase, "|$1")
+
+	// Split the string on the special character
+	split := strings.Split(replaced, "|")
+	return split
 }
 
 func generateObject(def *ast.Definition) string {

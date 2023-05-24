@@ -152,10 +152,10 @@ func (operations *Operations) generateFragmentTypes(isImportTypes bool) string {
 func generateOperationVars(astOp *ast.OperationDefinition, isImportTypes bool) string {
 	operationVars := ""
 	if isImportTypes {
-		operationVars = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) +
+		operationVars = "export type " + normalizeOpName(astOp.Name) + UcFirst(string(astOp.Operation)) +
 			"Variables = " + defExportName + ".Exact<{\n"
 	} else {
-		operationVars = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + "Variables = Exact<{\n"
+		operationVars = "export type " + normalizeOpName(astOp.Name) + UcFirst(string(astOp.Operation)) + "Variables = Exact<{\n"
 	}
 
 	for _, varDef := range astOp.VariableDefinitions {
@@ -168,10 +168,10 @@ func generateOperationVars(astOp *ast.OperationDefinition, isImportTypes bool) s
 func (operations *Operations) generateOperation(astOp *ast.OperationDefinition, isImportTypes bool) string {
 	output := ""
 	if isImportTypes {
-		output = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + " = " +
+		output = "export type " + normalizeOpName(astOp.Name) + UcFirst(string(astOp.Operation)) + " = " +
 			defExportName + ".Exact<{\n"
 	} else {
-		output = "export type " + UcFirst(astOp.Name) + UcFirst(string(astOp.Operation)) + " = Exact<{\n"
+		output = "export type " + normalizeOpName(astOp.Name) + UcFirst(string(astOp.Operation)) + " = Exact<{\n"
 	}
 	if astOp.Operation == "query" {
 		output += "__typename?: 'query_root',\n"
@@ -207,6 +207,9 @@ func (operations *Operations) generateFragmentSpreadField(astFragmentSpread *ast
 //func generateFragmentFieldName()
 
 func (operations *Operations) generateOpField(astField *ast.Field, isImportTypes bool) string {
+	if astField.Name == "__typename" {
+		return ""
+	}
 	output := ""
 	if astField.SelectionSet == nil {
 		output += spacing + generateOpFieldName(astField) + ": " +
@@ -224,7 +227,7 @@ func (operations *Operations) generateOpField(astField *ast.Field, isImportTypes
 			closeStr += "};\n"
 		}
 		output += generateOpFieldName(astField) + ": " + opStr
-		output += "__typename?: '" + astField.Name + "',\n"
+		output += "__typename?: '" + getUnderscoreTypeName(astField) + "',\n"
 		for _, selection := range astField.SelectionSet {
 			innerAstField, isField := selection.(*ast.Field)
 			if isField {
@@ -242,6 +245,16 @@ func (operations *Operations) generateOpField(astField *ast.Field, isImportTypes
 	return output
 }
 
+func getUnderscoreTypeName(astField *ast.Field) string {
+	if astField.Definition.Type.NamedType != "" {
+		return astField.Definition.Type.NamedType
+	} else if astField.Definition.Type.Elem.NamedType != "" {
+		return astField.Definition.Type.Elem.NamedType
+	} else {
+		return astField.Name
+	}
+}
+
 func (operations *Operations) addSpreadFragment(fragment *ast.FragmentSpread) {
 	if operations.fragments == nil {
 		operations.fragments = make(map[string]*ast.FragmentSpread)
@@ -256,11 +269,44 @@ func generateOpFieldName(astField *ast.Field) string {
 	return astField.Alias
 }
 
-// Upper Case first letter of a string
+// Upper Case first letter of a string + convert UPPERCASE words to Uppsercase instead
 func UcFirst(input string) string {
 	r, size := utf8.DecodeRuneInString(input)
 	input = strings.ToUpper(string(r)) + input[size:]
+
+	input = strings.ReplaceAll(input, "ID", "Id")
+
+	//// Regex to match uppercase sub-words
+	//re := regexp.MustCompile(`[A-Z][A-Z]+`)
+	//
+	//// Function to convert a match to title case
+	//convertToTitleCase := func(m string) string {
+	//	return strings.Title(strings.ToLower(m))
+	//}
+	//
+	//// Apply the function to all matches
+	//input = re.ReplaceAllStringFunc(input, convertToTitleCase)
+
 	return input
+}
+
+func normalizeOpName(opName string) string {
+	return UcFirst(opName)
+}
+
+func fixTitleCase(input string) string {
+	// Regex to match uppercase sub-words
+	re := regexp.MustCompile(`[A-Z][A-Z]+`)
+
+	// Function to convert a match to title case
+	convertToTitleCase := func(m string) string {
+		return strings.Title(strings.ToLower(m))
+	}
+
+	// Apply the function to all matches
+	output := re.ReplaceAllStringFunc(input, convertToTitleCase)
+
+	return output
 }
 
 func generateVariable(varDef *ast.VariableDefinition, isImportTypes bool) string {
@@ -318,7 +364,7 @@ func wrapOpScalar(typeName string, isImportTypes bool) string {
 	typeName = normalizedName(typeName)
 	scalars := []string{
 		"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz",
-		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point",
+		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point", "Date", "date",
 	}
 	for _, scalar := range scalars {
 		if typeName == scalar {
