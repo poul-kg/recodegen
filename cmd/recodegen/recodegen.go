@@ -16,6 +16,9 @@ import (
 func main() {
 	configFileName := flag.String("config", "recodegen.json", "Configuration file name")
 	flag.Parse()
+	if *configFileName == "" {
+		*configFileName = "recodegen.json"
+	}
 	cliConfig := config.ReadConfigFromFile(*configFileName)
 	schemaAst := getSchemaAst(cliConfig.Schema)
 
@@ -48,6 +51,7 @@ func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config
 	if genConfig.Plugins[0] == "typescript" {
 		//generateSchema(schemaAst, outputFileName)
 		schema := typescript.Schema{Ast: schemaAst}
+		fmt.Printf("[writing] %s\n", outputFileName)
 		writeFile(outputFileName, schema.String())
 	}
 	if genConfig.Plugins[0] == "typescript-operations" {

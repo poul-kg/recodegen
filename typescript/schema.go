@@ -51,7 +51,8 @@ export type Scalars = {
   Float: number;
   Bigint: any;
   date: any;
-  float8: any;
+  Date: any;
+  Float8: any;
   Timestamp: any;
   Timestamptz: any;
   Json: any;
