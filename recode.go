@@ -7,6 +7,7 @@ import (
 	"github.com/vektah/gqlparser/v2/ast"
 	"log"
 	"os"
+	"path/filepath"
 	"recodegen/config"
 	"recodegen/typescript"
 	"runtime"
@@ -84,6 +85,12 @@ func getSchemaAst(inputFileName string) *ast.Schema {
 }
 
 func writeFile(fileName string, data string) {
+	dir := filepath.Dir(fileName)
+	err := os.MkdirAll(dir, os.ModePerm)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	f, err := os.Create(fileName)
 
 	if err != nil {
