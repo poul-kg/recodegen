@@ -1,0 +1,35 @@
+{
+  "name": "@graphql-recodegen/cli",
+  "version": "0.0.7",
+  "description": "Faster GraphQL codegen for TypeScript projects",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "postinstall": "go-npm install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/poul-kg/recodegen.git"
+  },
+  "keywords": [
+    "graphql",
+    "codegen",
+    "generator",
+    "typescript"
+  ],
+  "author": "Pavel Kostenko",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/poul-kg/recodegen/issues"
+  },
+  "homepage": "https://github.com/poul-kg/recodegen#readme",
+  "dependencies": {
+    "go-npm-next": "^1.0.6"
+  },
+  "files": [],
+  "goBinary": {
+    "name": "recodegen",
+    "path": "./bin",
+    "url": "https://github.com/poul-kg/recodegen/releases/download/v{{version}}/recodegen-v{{version}}-{{platform}}-{{arch}}.tar.gz"
+  }
+}
