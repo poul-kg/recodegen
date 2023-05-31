@@ -6,6 +6,7 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -20,7 +21,9 @@ func (schema *Schema) String() string {
 	var enumOnly = ""
 	var typesOnly = ""
 	var objectsOnly = ""
-	for _, def := range schema.Ast.Types {
+	sortedTypeKeys := schema.getSortedTypeKeys()
+	for _, key := range *sortedTypeKeys {
+		def := schema.Ast.Types[key]
 		if def.Kind == ast.Enum {
 			enumOnly += genEnum(def)
 		}
@@ -35,6 +38,19 @@ func (schema *Schema) String() string {
 		}
 	}
 	return schema.getTypesHeader() + enumOnly + typesOnly + objectsOnly
+}
+
+func (schema *Schema) getSortedTypeKeys() *[]string {
+	// Create a slice to hold the keys
+	keys := make([]string, 0, len(schema.Ast.Types))
+	for k := range schema.Ast.Types {
+		keys = append(keys, k)
+	}
+
+	// Sort the keys
+	sort.Strings(keys)
+
+	return &keys
 }
 
 func (schema *Schema) getTypesHeader() string {
