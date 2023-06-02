@@ -51,17 +51,47 @@ func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config
 	if genConfig.Plugins[0] == "typescript" {
 		//generateSchema(schemaAst, outputFileName)
 		schema := typescript.Schema{Ast: schemaAst}
-		fmt.Printf("[writing] %s\n", outputFileName)
-		writeFile(outputFileName, schema.String())
+
+		generatedSchema := schema.String()
+		existingSchema := getFileContentIfExists(outputFileName)
+		if *existingSchema != generatedSchema {
+			fmt.Printf("[writing] %s\n", outputFileName)
+			writeFile(outputFileName, schema.String())
+		} else {
+			fmt.Printf("[skipping] %s\n", outputFileName)
+		}
+		generatedSchema = ""
+		*existingSchema = ""
 	}
+
 	if genConfig.Plugins[0] == "typescript-operations" {
 		operation := typescript.Operations{
 			Ast:    schemaAst,
 			Config: genConfig,
 		}
-		fmt.Printf("[writing] %s\n", outputFileName)
-		writeFile(outputFileName, operation.String())
+
+		generatedOps := operation.String()
+		existingOps := getFileContentIfExists(outputFileName)
+		if *existingOps != generatedOps {
+			fmt.Printf("[writing] %s\n", outputFileName)
+			writeFile(outputFileName, operation.String())
+		} else {
+			fmt.Printf("[skipping] %s\n", outputFileName)
+		}
+		generatedOps = ""
+		*existingOps = ""
 	}
+}
+
+func getFileContentIfExists(fileName string) *string {
+	schemaBytes, err := os.ReadFile(fileName)
+	if err != nil {
+		empty := ""
+		return &empty
+	}
+
+	content := string(schemaBytes)
+	return &content
 }
 
 func getFileContent(fileName string) string {
