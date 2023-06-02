@@ -13,9 +13,18 @@ import (
 	"runtime"
 )
 
+const VERSION = "v0.1.3"
+
 func main() {
 	configFileName := flag.String("config", "recodegen.json", "Configuration file name")
+	versionFlag := flag.Bool("v", false, "Print version")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(VERSION)
+		os.Exit(0)
+	}
+
 	if *configFileName == "" {
 		*configFileName = "recodegen.json"
 	}
@@ -56,7 +65,7 @@ func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config
 		existingSchema := getFileContentIfExists(outputFileName)
 		if *existingSchema != generatedSchema {
 			fmt.Printf("[writing] %s\n", outputFileName)
-			writeFile(outputFileName, schema.String())
+			writeFile(outputFileName, generatedSchema)
 		} else {
 			fmt.Printf("[skipping] %s\n", outputFileName)
 		}
@@ -74,7 +83,7 @@ func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config
 		existingOps := getFileContentIfExists(outputFileName)
 		if *existingOps != generatedOps {
 			fmt.Printf("[writing] %s\n", outputFileName)
-			writeFile(outputFileName, operation.String())
+			writeFile(outputFileName, generatedOps)
 		} else {
 			fmt.Printf("[skipping] %s\n", outputFileName)
 		}
