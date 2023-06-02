@@ -1,6 +1,6 @@
 {
   "name": "@graphql-recodegen/cli",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "description": "Faster GraphQL codegen for TypeScript projects",
   "main": "index.js",
   "type": "module",
@@ -10,7 +10,7 @@
     "preuninstall": "./scripts/postinstall.js uninstall"
   },
   "bin": {
-    "recodegen": "./bin/recodegen",
+    "recodegen": "./bin/recodegen"
   },
   "repository": {
     "type": "git",

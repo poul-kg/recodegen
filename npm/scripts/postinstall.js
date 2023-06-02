@@ -158,15 +158,15 @@ function install(callback) {
     mkdirp.sync(opts.binPath);
     console.log("Downloading from URL: " + opts.url);
     fetchAndUntar(opts.url, opts.binPath)
-        .then(() => console.log('Done!'))
+        .then(() => {
+            // Overwrite recodegen with recodegen.exe if found
+            const exeBinary = path.join(opts.binPath, `${opts.binName}.exe`);
+            const nonExeBinary = path.join(opts.binPath, opts.binName);
+            if (fs.existsSync(exeBinary)) {
+                fs.copyFileSync(exeBinary, nonExeBinary)
+            }
+        })
         .catch(console.error);
-
-    // Overwrite recodegen with recodegen.exe if found
-    const exeBinary = path.join(opts.binPath, `${opts.binName}.exe`);
-    const nonExeBinary = path.join(opts.binPath, opts.binName);
-    if (fs.existsSync(exeBinary)) {
-        fs.copyFileSync(exeBinary, nonExeBinary)
-    }
 }
 
 async function fetchAndUntar(url, outputPath) {
