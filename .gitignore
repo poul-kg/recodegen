@@ -21,8 +21,14 @@
 go.work
 
 dist/
+generated/
+schema/
+test-data/
 npm/LICENSE
 npm/README.md
 npm/bin/LICENSE
 npm/bin/README.md
 npm/package-lock.json
+npm/node_modules/
+recodegen.json
+recodegen-nx.json
