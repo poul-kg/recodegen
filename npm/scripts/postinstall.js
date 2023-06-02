@@ -3,7 +3,6 @@
 "use strict"
 import path from 'path';
 import tar from 'tar';
-import zlib from 'zlib';
 import * as mkdirp from 'mkdirp';
 import * as fs from 'fs';
 import {exec} from 'child_process';
@@ -157,20 +156,17 @@ function install(callback) {
     if (!opts) return callback(INVALID_INPUT);
 
     mkdirp.sync(opts.binPath);
-    let ungz = zlib.createGunzip();
-    let untar = tar.x({path: opts.binPath});
-
-    ungz.on('error', callback);
-    untar.on('error', callback);
-
-    // First we will Un-GZip, then we will untar. So once untar is completed,
-    // binary is downloaded into `binPath`. Verify the binary and call it good
-    untar.on('end', verifyAndPlaceBinary.bind(null, opts.binName, opts.binPath, callback));
-
     console.log("Downloading from URL: " + opts.url);
     fetchAndUntar(opts.url, opts.binPath)
         .then(() => console.log('Done!'))
         .catch(console.error);
+
+    // Overwrite recodegen with recodegen.exe if found
+    const exeBinary = path.join(opts.binPath, `${opts.binName}.exe`);
+    const nonExeBinary = path.join(opts.binPath, opts.binName);
+    if (fs.existsSync(exeBinary)) {
+        fs.copyFileSync(exeBinary, nonExeBinary)
+    }
 }
 
 async function fetchAndUntar(url, outputPath) {

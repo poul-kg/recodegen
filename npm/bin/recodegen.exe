@@ -1,3 +1,0 @@
-// this is an empty file so "npm install" create a symlink in "node_modules/.bin" directory
-// after packages is installed and "postinstall" script is executed
-// without this file no symlink will be created in "node_modules/.bin" directory
