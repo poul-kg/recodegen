@@ -1,11 +1,13 @@
 {
   "name": "@graphql-recodegen/cli",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "description": "Faster GraphQL codegen for TypeScript projects",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "go-npm install"
+    "postinstall": "./scripts/postinstall.js install",
+    "preuninstall": "./scripts/postinstall.js uninstall"
   },
   "bin": {
     "recodegen": "./bin/recodegen"
@@ -27,7 +29,9 @@
   },
   "homepage": "https://github.com/poul-kg/recodegen#readme",
   "dependencies": {
-    "go-npm-next": "^1.0.6"
+    "mkdirp": "^3.0.1",
+    "node-fetch": "^3.3.1",
+    "tar": "^6.1.15"
   },
   "files": [],
   "goBinary": {
