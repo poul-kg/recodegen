@@ -1,6 +1,6 @@
 {
   "name": "@graphql-recodegen/cli",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "description": "Faster GraphQL codegen for TypeScript projects",
   "main": "index.js",
   "type": "module",
@@ -33,7 +33,9 @@
     "node-fetch": "^3.3.1",
     "tar": "^6.1.15"
   },
-  "files": [],
+  "files": [
+    "scripts"
+  ],
   "goBinary": {
     "name": "recodegen",
     "path": "./bin",
