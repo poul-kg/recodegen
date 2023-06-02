@@ -26,8 +26,6 @@ func main() {
 		processInput(schemaAst, outputFileName, genConfig)
 	}
 
-	PrintMemUsage()
-
 	//fmt.Println("Parallel")
 	//var wg sync.WaitGroup
 	//
@@ -45,6 +43,8 @@ func main() {
 	//
 	//// wait for all goroutines to finish
 	//wg.Wait()
+
+	PrintMemUsage()
 }
 
 func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config.CodegenSchemaEntryConfig) {
