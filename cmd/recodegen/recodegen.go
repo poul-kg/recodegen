@@ -13,7 +13,7 @@ import (
 	"runtime"
 )
 
-const VERSION = "v0.2.1"
+const VERSION = "v0.2.2"
 
 func main() {
 	configFileName := flag.String("config", "recodegen.json", "Configuration file name")
@@ -58,14 +58,16 @@ func main() {
 
 func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config.CodegenSchemaEntryConfig) {
 	output := ""
+	hadKnownPlugin := false
 	for _, plugin := range genConfig.Plugins {
 		if plugin == "typescript" {
-			//generateSchema(schemaAst, outputFileName)
+			hadKnownPlugin = true
 			schema := typescript.Schema{Ast: schemaAst}
 			output += schema.String()
 		}
 
 		if plugin == "typescript-operations" {
+			hadKnownPlugin = true
 			operation := typescript.Operations{
 				Ast:    schemaAst,
 				Config: genConfig,
@@ -73,6 +75,12 @@ func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config
 
 			output += operation.String()
 		}
+	}
+
+	// don't write anything to a file if no known plugins were used
+	if !hadKnownPlugin {
+		fmt.Printf("[skipping] %s\n", outputFileName)
+		return
 	}
 
 	existingFileContent := getFileContentIfExists(outputFileName)
