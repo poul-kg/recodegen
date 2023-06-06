@@ -57,38 +57,30 @@ func main() {
 }
 
 func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config.CodegenSchemaEntryConfig) {
-	if genConfig.Plugins[0] == "typescript" {
-		//generateSchema(schemaAst, outputFileName)
-		schema := typescript.Schema{Ast: schemaAst}
-
-		generatedSchema := schema.String()
-		existingSchema := getFileContentIfExists(outputFileName)
-		if *existingSchema != generatedSchema {
-			fmt.Printf("[writing] %s\n", outputFileName)
-			writeFile(outputFileName, generatedSchema)
-		} else {
-			fmt.Printf("[skipping] %s\n", outputFileName)
+	output := ""
+	for _, plugin := range genConfig.Plugins {
+		if plugin == "typescript" {
+			//generateSchema(schemaAst, outputFileName)
+			schema := typescript.Schema{Ast: schemaAst}
+			output += schema.String()
 		}
-		generatedSchema = ""
-		*existingSchema = ""
+
+		if plugin == "typescript-operations" {
+			operation := typescript.Operations{
+				Ast:    schemaAst,
+				Config: genConfig,
+			}
+
+			output += operation.String()
+		}
 	}
 
-	if genConfig.Plugins[0] == "typescript-operations" {
-		operation := typescript.Operations{
-			Ast:    schemaAst,
-			Config: genConfig,
-		}
-
-		generatedOps := operation.String()
-		existingOps := getFileContentIfExists(outputFileName)
-		if *existingOps != generatedOps {
-			fmt.Printf("[writing] %s\n", outputFileName)
-			writeFile(outputFileName, generatedOps)
-		} else {
-			fmt.Printf("[skipping] %s\n", outputFileName)
-		}
-		generatedOps = ""
-		*existingOps = ""
+	existingFileContent := getFileContentIfExists(outputFileName)
+	if *existingFileContent != output {
+		fmt.Printf("[writing] %s\n", outputFileName)
+		writeFile(outputFileName, output)
+	} else {
+		fmt.Printf("[skipping] %s\n", outputFileName)
 	}
 }
 
