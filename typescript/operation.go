@@ -81,7 +81,7 @@ func (operations *Operations) generateOperations(queryStr string, typesPath stri
 	// Parse the schema file
 	astQuery, parseErr := gqlparser.LoadQuery(operations.Ast, queryStr)
 	if parseErr != nil {
-		fmt.Printf("%s\n", queryStr)
+		fmt.Printf("Error while scanning: %s\n", operations.Config.Documents)
 		panic(parseErr)
 	}
 	isImportTypes := false
