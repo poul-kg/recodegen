@@ -13,7 +13,7 @@ import (
 	"runtime"
 )
 
-const VERSION = "v0.1.3"
+const VERSION = "v0.2.1"
 
 func main() {
 	configFileName := flag.String("config", "recodegen.json", "Configuration file name")
