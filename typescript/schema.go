@@ -31,11 +31,17 @@ func (schema *Schema) String() string {
 			typesOnly += genInputObject(def)
 		}
 		if def.Kind == ast.Object {
-			objectsOnly += generateObject(def)
+			objectsOnly += schema.generateObject(def)
 		}
-		if def.Kind == ast.Interface {
-			//fmt.Printf("%s\n", def.Name)
-		}
+		//if def.Kind == ast.Interface {
+		//	fmt.Printf("Interface: %s\n", def.Name)
+		//}
+		//if def.Kind == ast.Union {
+		//	fmt.Printf("Union: %s\n", def.Name)
+		//}
+		//if def.Kind == ast.Scalar {
+		//fmt.Printf("Scalar: %s\n", def.Name)
+		//}
 	}
 	return schema.getTypesHeader() + enumOnly + typesOnly + objectsOnly
 }
@@ -97,7 +103,7 @@ func genEnum(def *ast.Definition) string {
 	for _, enumVal := range def.EnumValues {
 		desc := ""
 		if len(enumVal.Description) > 0 {
-			desc = fmt.Sprintf("%s/** %s */", spacing, enumVal.Description)
+			desc = fmt.Sprintf("%s/** %s */\n", spacing, enumVal.Description)
 		}
 		// /** desc */
 		// enumName = 'enumValue'
@@ -128,6 +134,9 @@ func normalizedName(snakeCase string) string {
 
 func genInputObject(def *ast.Definition) string {
 	desc := generateDesc(def.Description)
+	if len(desc) > 0 {
+		desc += "\n"
+	}
 	start := desc + "export type " + normalizedName(def.Name) + " = {\n"
 	var fields []string
 	for _, field := range def.Fields {
@@ -224,10 +233,11 @@ func splitUnderscoredString(snakeCase string) []string {
 	return split
 }
 
-func generateObject(def *ast.Definition) string {
+func (schema *Schema) generateObject(def *ast.Definition) string {
 	objectName := normalizedName(def.Name)
 	desc := generateDesc(def.Description)
 	header := fmt.Sprintf("\nexport type %s = {", objectName)
+	args := ""
 	if len(desc) > 0 {
 		header = "\n" + desc + header
 	}
@@ -241,10 +251,32 @@ func generateObject(def *ast.Definition) string {
 		if field.Name == "__type" {
 			continue
 		}
+		if len(field.Arguments) > 0 {
+			args += generateArgDefinition(objectName, field.Name, field.Arguments)
+		}
 		if len(field.Description) > 0 {
 			body += "\n" + spacing + generateDesc(field.Description)
 		}
 		body += "\n" + spacing + generateFieldName(field) + ": " + generateFieldType(field.Type) + ";"
 	}
-	return header + body + footer
+	return header + body + footer + args
+}
+
+func generateArgDefinition(parentName string, fieldName string, args []*ast.ArgumentDefinition) string {
+	output := "export type " + parentName + normalizedName(fieldName) + "Args = {\n"
+	fields := ""
+	for _, arg := range args {
+		if len(arg.Description) > 0 {
+			fields += spacing + "/** " + arg.Description + " */\n"
+		}
+		fields += spacing + arg.Name
+		if arg.Type.NonNull == false {
+			fields += "?: "
+		} else {
+			fields += ": "
+		}
+		fields += genInputFieldType(arg.Type) + ";\n"
+	}
+	output += fields + "};\n\n"
+	return output
 }

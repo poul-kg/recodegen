@@ -1,6 +1,6 @@
 {
   "name": "@graphql-recodegen/cli",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Faster GraphQL codegen for TypeScript projects",
   "main": "index.js",
   "type": "module",
