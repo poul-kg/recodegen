@@ -22,6 +22,16 @@ type Operations struct {
 
 func (operations *Operations) String() string {
 	typesPath := ""
+
+	// Load scalars if not loaded yet
+	if len(scalarNames) == 0 {
+		for _, def := range operations.Ast.Types {
+			if def.Kind == ast.Scalar {
+				scalarNames = append(scalarNames, def.Name)
+			}
+		}
+	}
+
 	if operations.Config.Preset == "import-types" {
 		typesPath = operations.Config.PresetConfig["typesPath"]
 	}
@@ -361,12 +371,7 @@ func generateOpFieldType(astType *ast.Type, isImportTypes bool) string {
 }
 
 func wrapOpScalar(typeName string, isImportTypes bool) string {
-	typeName = normalizedName(typeName)
-	scalars := []string{
-		"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz",
-		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point", "Date", "date",
-	}
-	for _, scalar := range scalars {
+	for _, scalar := range scalarNames {
 		if typeName == scalar {
 			switch scalar {
 			case "Boolean":
@@ -375,20 +380,15 @@ func wrapOpScalar(typeName string, isImportTypes bool) string {
 				return "string"
 			case "Int":
 				return "number"
-			case "Float8":
-				return "number"
 			case "Float":
 				return "number"
-			case "Bigint":
-				return "number"
-			case "Timestamp":
-				return "string"
-			case "Timestamptz":
+			case "ID":
 				return "string"
 			}
 			return "any"
 		}
 	}
+	typeName = normalizedName(typeName)
 	if isImportTypes {
 		typeName = "Types." + typeName
 	}
