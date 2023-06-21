@@ -325,7 +325,7 @@ func generateVariable(varDef *ast.VariableDefinition, isImportTypes bool) string
 }
 
 func generateFieldTypeImported(astType *ast.Type) string {
-	normalName := wrapScalar(normalizedName(astType.Name()))
+	normalName := wrapScalar(astType.Name())
 	normalName = defExportName + "." + normalName
 
 	if astType.NamedType != "" {

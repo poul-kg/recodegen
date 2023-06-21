@@ -12,6 +12,8 @@ import (
 
 const spacing = "  "
 
+var scalarNames []string
+
 type Schema struct {
 	Ast *ast.Schema
 }
@@ -21,7 +23,15 @@ func (schema *Schema) String() string {
 	var enumOnly = ""
 	var typesOnly = ""
 	var objectsOnly = ""
+
 	sortedTypeKeys := schema.getSortedTypeKeys()
+	for _, key := range *sortedTypeKeys {
+		def := schema.Ast.Types[key]
+		if def.Kind == ast.Scalar {
+			scalarNames = append(scalarNames, def.Name)
+		}
+	}
+
 	for _, key := range *sortedTypeKeys {
 		def := schema.Ast.Types[key]
 		if def.Kind == ast.Enum {
@@ -39,11 +49,10 @@ func (schema *Schema) String() string {
 		//if def.Kind == ast.Union {
 		//	fmt.Printf("Union: %s\n", def.Name)
 		//}
-		//if def.Kind == ast.Scalar {
-		//fmt.Printf("Scalar: %s\n", def.Name)
-		//}
+
 	}
-	return schema.getTypesHeader() + enumOnly + typesOnly + objectsOnly
+	scalars := genScalars(scalarNames)
+	return schema.getTypesHeader() + scalars + enumOnly + typesOnly + objectsOnly
 }
 
 func (schema *Schema) getSortedTypeKeys() *[]string {
@@ -66,27 +75,29 @@ export type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K]
 export type MakeOptional<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]?: Maybe<T[SubKey]> };
 export type MakeMaybe<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]: Maybe<T[SubKey]> };
 /** All built-in and custom scalars, mapped to their actual values */
-export type Scalars = {
-  ID: string;
-  String: string;
-  Boolean: boolean;
-  Int: number;
-  Float: number;
-  Bigint: any;
-  date: any;
-  Date: any;
-  Float8: any;
-  Timestamp: any;
-  Timestamptz: any;
-  Json: any;
-  Jsonb: any;
-  Numeric: any;
-  Point: any;
-  Polygon: any;
-  Uuid: any;
-};
-
 `
+}
+
+func genScalars(scalarNames []string) string {
+	head := "export type Scalars = {\n"
+	body := ""
+	for _, name := range scalarNames {
+		switch name {
+		case "ID":
+			body += spacing + "ID: string;\n"
+		case "Int":
+			body += spacing + "Int: number;\n"
+		case "Float":
+			body += spacing + "Float: number;\n"
+		case "String":
+			body += spacing + "String: string;\n"
+		case "Boolean":
+			body += spacing + "Boolean: boolean;\n"
+		default:
+			body += spacing + name + ": any;\n"
+		}
+	}
+	return head + body + "}\n"
 }
 
 func genEnum(def *ast.Definition) string {
@@ -147,7 +158,7 @@ func genInputObject(def *ast.Definition) string {
 }
 
 func generateFieldType(astType *ast.Type) string {
-	normalName := wrapScalar(normalizedName(astType.Name()))
+	normalName := wrapScalar(astType.Name())
 
 	if astType.NamedType != "" {
 		if astType.NonNull == false {
@@ -167,16 +178,12 @@ func generateFieldType(astType *ast.Type) string {
 // given type like "Int" will wrap it into "Scalars['Int']"
 // if given type is not scalar, return as is
 func wrapScalar(typeName string) string {
-	scalars := []string{
-		"Boolean", "String", "Int", "Float8", "Float", "Bigint", "Timestamp", "Timestamptz",
-		"Numeric", "Uuid", "Json", "Jsonb", "Polygon", "Point", "Date", "date",
-	}
-	for _, scalar := range scalars {
+	for _, scalar := range scalarNames {
 		if typeName == scalar {
 			return "Scalars['" + typeName + "']"
 		}
 	}
-	return typeName
+	return normalizedName(typeName)
 }
 
 func generateFieldName(astFieldDef *ast.FieldDefinition) string {
@@ -191,7 +198,7 @@ func genNullable(astFieldDef *ast.FieldDefinition) string {
 }
 
 func genInputFieldType(astType *ast.Type) string {
-	normalName := wrapScalar(normalizedName(astType.Name()))
+	normalName := wrapScalar(astType.Name())
 
 	if astType.NamedType != "" {
 		if astType.NonNull == false {

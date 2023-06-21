@@ -13,7 +13,7 @@ import (
 	"runtime"
 )
 
-const VERSION = "v0.3.0"
+const VERSION = "v0.4.0"
 
 func main() {
 	configFileName := flag.String("config", "recodegen.json", "Configuration file name")
@@ -79,7 +79,7 @@ func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config
 
 	// don't write anything to a file if no known plugins were used
 	if !hadKnownPlugin {
-		fmt.Printf("[skipping] %s\n", outputFileName)
+		fmt.Printf("[unsupported] %s\n", outputFileName)
 		return
 	}
 
@@ -88,7 +88,7 @@ func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config
 		fmt.Printf("[writing] %s\n", outputFileName)
 		writeFile(outputFileName, output)
 	} else {
-		fmt.Printf("[skipping] %s\n", outputFileName)
+		fmt.Printf("[unchanged] %s\n", outputFileName)
 	}
 }
 
