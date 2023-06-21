@@ -24,10 +24,13 @@ func (operations *Operations) String() string {
 	typesPath := ""
 
 	// Load scalars if not loaded yet
-	if len(scalarNames) == 0 {
-		for _, def := range operations.Ast.Types {
+	if len(*scalarNames) == 0 {
+		schema := Schema{Ast: operations.Ast}
+		sortedTypeKeys := schema.getSortedTypeKeys()
+		for _, key := range *sortedTypeKeys {
+			def := schema.Ast.Types[key]
 			if def.Kind == ast.Scalar {
-				scalarNames = append(scalarNames, def.Name)
+				*scalarNames = append(*scalarNames, def.Name)
 			}
 		}
 	}
@@ -371,7 +374,7 @@ func generateOpFieldType(astType *ast.Type, isImportTypes bool) string {
 }
 
 func wrapOpScalar(typeName string, isImportTypes bool) string {
-	for _, scalar := range scalarNames {
+	for _, scalar := range *scalarNames {
 		if typeName == scalar {
 			switch scalar {
 			case "Boolean":

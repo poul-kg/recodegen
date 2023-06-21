@@ -12,7 +12,7 @@ import (
 
 const spacing = "  "
 
-var scalarNames []string
+var scalarNames *[]string = &[]string{}
 
 type Schema struct {
 	Ast *ast.Schema
@@ -25,10 +25,12 @@ func (schema *Schema) String() string {
 	var objectsOnly = ""
 
 	sortedTypeKeys := schema.getSortedTypeKeys()
-	for _, key := range *sortedTypeKeys {
-		def := schema.Ast.Types[key]
-		if def.Kind == ast.Scalar {
-			scalarNames = append(scalarNames, def.Name)
+	if len(*scalarNames) == 0 {
+		for _, key := range *sortedTypeKeys {
+			def := schema.Ast.Types[key]
+			if def.Kind == ast.Scalar {
+				*scalarNames = append(*scalarNames, def.Name)
+			}
 		}
 	}
 
@@ -51,7 +53,7 @@ func (schema *Schema) String() string {
 		//}
 
 	}
-	scalars := genScalars(scalarNames)
+	scalars := genScalars(*scalarNames)
 	return schema.getTypesHeader() + scalars + enumOnly + typesOnly + objectsOnly
 }
 
@@ -178,7 +180,7 @@ func generateFieldType(astType *ast.Type) string {
 // given type like "Int" will wrap it into "Scalars['Int']"
 // if given type is not scalar, return as is
 func wrapScalar(typeName string) string {
-	for _, scalar := range scalarNames {
+	for _, scalar := range *scalarNames {
 		if typeName == scalar {
 			return "Scalars['" + typeName + "']"
 		}
