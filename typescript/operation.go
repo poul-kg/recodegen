@@ -15,7 +15,7 @@ import (
 const defExportName = "Types"
 
 type Operations struct {
-	Config    config.CodegenSchemaEntryConfig
+	Config    *config.CodegenSchemaEntryConfig
 	Ast       *ast.Schema
 	fragments map[string]*ast.FragmentSpread
 }

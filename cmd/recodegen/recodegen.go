@@ -13,7 +13,7 @@ import (
 	"runtime"
 )
 
-const VERSION = "v0.4.2"
+const VERSION = "v0.4.3"
 
 func main() {
 	configFileName := flag.String("config", "recodegen.json", "Configuration file name")
@@ -32,7 +32,7 @@ func main() {
 	schemaAst := getSchemaAst(cliConfig.Schema)
 
 	for outputFileName, genConfig := range cliConfig.Generates {
-		processInput(schemaAst, outputFileName, genConfig)
+		processInput(schemaAst, outputFileName, &genConfig)
 	}
 
 	//fmt.Println("Parallel")
@@ -56,7 +56,7 @@ func main() {
 	PrintMemUsage()
 }
 
-func processInput(schemaAst *ast.Schema, outputFileName string, genConfig config.CodegenSchemaEntryConfig) {
+func processInput(schemaAst *ast.Schema, outputFileName string, genConfig *config.CodegenSchemaEntryConfig) {
 	output := ""
 	hadKnownPlugin := false
 	for _, plugin := range genConfig.Plugins {
