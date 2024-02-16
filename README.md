@@ -3,7 +3,7 @@ Faster GraphQL codegen for TypeScript projects
 
 ## Installation
 ### Binary
-* you can download binaris from [Releases](https://github.com/poul-kg/recodegen/releases) page
+* you can download binaries from [Releases](https://github.com/poul-kg/recodegen/releases) page
 ### NPM
 #### Globally via NPM
 * `npm install -g @graphql-recodegen/cli`

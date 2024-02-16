@@ -250,7 +250,7 @@ func (schema *Schema) generateObject(def *ast.Definition) string {
 	if len(desc) > 0 {
 		header = "\n" + desc + header
 	}
-	body := ""
+	body := "\n__typename?: '" + def.Name + "';\n"
 	footer := "\n};\n"
 
 	for _, field := range def.Fields {
